@@ -40,7 +40,7 @@ type Conn struct {
 
 // NewChannelPool 初始化连接
 func NewChannelPool(poolConfig *Config) (Pool, error) {
-	if poolConfig.MaxIdleConns < 0 || poolConfig.MaxOpenConns <= 0 || poolConfig.MaxIdleConns > poolConfig.MaxOpenConns {
+	if poolConfig.MaxIdleConns < 0 || poolConfig.MaxOpenConns <= 0 || poolConfig.MaxIdleConns < poolConfig.MaxOpenConns {
 		return nil, errors.New("invalid capacity settings")
 	}
 	if poolConfig.New == nil {
