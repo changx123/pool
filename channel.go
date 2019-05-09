@@ -61,7 +61,7 @@ func NewChannelPool(poolConfig *Config) (Pool, error) {
 		c.ping = poolConfig.Ping
 	}
 
-	for i := 0; i < poolConfig.MaxIdleConns; i++ {
+	for i := 0; i < poolConfig.MaxOpenConns; i++ {
 		conn, err := c.new()
 		if err != nil {
 			c.CloseAll()
