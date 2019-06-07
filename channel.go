@@ -3,16 +3,16 @@ package pool
 import (
 	"time"
 	"sync"
-	"github.com/pkg/errors"
+	"errors"
 	"fmt"
 )
 
 // Config 连接池相关配置
 type Config struct {
-	//最大闲置链接
-	MaxIdleConns int
 	//最大链接数
 	MaxOpenConns int
+	//最大闲置链接
+	MaxIdleConns int
 	//生成连接的方法
 	New func() (interface{}, error)
 	//关闭连接的方法
@@ -25,12 +25,14 @@ type Config struct {
 
 // channelPool 存放连接信息
 type channelPool struct {
-	mutex       sync.Mutex
-	conns       chan *Conn
-	new         func() (interface{}, error)
-	close       func(interface{}) error
-	ping        func(interface{}) error
-	connTimeout time.Duration
+	mutex              sync.Mutex
+	conns              chan *Conn
+	new                func() (interface{}, error)
+	close              func(interface{}) error
+	ping               func(interface{}) error
+	connTimeout        time.Duration
+	maxOpenConns       int
+	overstepConnNumber int
 }
 
 type Conn struct {
@@ -40,7 +42,7 @@ type Conn struct {
 
 // NewChannelPool 初始化连接
 func NewChannelPool(poolConfig *Config) (Pool, error) {
-	if poolConfig.MaxIdleConns < 0 || poolConfig.MaxOpenConns <= 0 || poolConfig.MaxIdleConns < poolConfig.MaxOpenConns {
+	if poolConfig.MaxIdleConns < 0 || poolConfig.MaxOpenConns <= 0 || poolConfig.MaxIdleConns > poolConfig.MaxOpenConns {
 		return nil, errors.New("invalid capacity settings")
 	}
 	if poolConfig.New == nil {
@@ -51,7 +53,7 @@ func NewChannelPool(poolConfig *Config) (Pool, error) {
 	}
 
 	c := &channelPool{
-		conns:       make(chan *Conn, poolConfig.MaxOpenConns),
+		conns:       make(chan *Conn, poolConfig.MaxIdleConns),
 		new:         poolConfig.New,
 		close:       poolConfig.Close,
 		connTimeout: poolConfig.ConnTimeout,
@@ -61,7 +63,7 @@ func NewChannelPool(poolConfig *Config) (Pool, error) {
 		c.ping = poolConfig.Ping
 	}
 
-	for i := 0; i < poolConfig.MaxOpenConns; i++ {
+	for i := 0; i < poolConfig.MaxIdleConns; i++ {
 		conn, err := c.new()
 		if err != nil {
 			c.CloseAll()
@@ -110,6 +112,9 @@ func (c *channelPool) Get() (interface{}, error) {
 			}
 			return wrapConn.conn, nil
 		default:
+			if c.maxOpenConns > (c.Len() + c.overstepConnNumber) {
+				return <-conns, nil
+			}
 			c.mutex.Lock()
 			if c.new == nil {
 				c.mutex.Unlock()
@@ -120,7 +125,7 @@ func (c *channelPool) Get() (interface{}, error) {
 			if err != nil {
 				return nil, err
 			}
-
+			c.overstepConnNumber++
 			return conn, nil
 		}
 	}
@@ -145,6 +150,7 @@ func (c *channelPool) Put(conn interface{}) error {
 		return nil
 	default:
 		c.mutex.Unlock()
+		c.overstepConnNumber--
 		//连接池已满，直接关闭该连接
 		return c.Close(conn)
 	}
