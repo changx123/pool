@@ -1,14 +1,16 @@
 package pool
 
 import (
-	"time"
-	"sync"
-	"errors"
 	"fmt"
+	"errors"
+	"sync"
+	"time"
 )
 
 // Config 连接池相关配置
 type Config struct {
+	//是否初始化连接池
+	IsInit bool
 	//最大链接数
 	MaxOpenConns int
 	//最大闲置链接
@@ -62,16 +64,16 @@ func NewChannelPool(poolConfig *Config) (Pool, error) {
 	if poolConfig.Ping != nil {
 		c.ping = poolConfig.Ping
 	}
-
-	for i := 0; i < poolConfig.MaxIdleConns; i++ {
-		conn, err := c.new()
-		if err != nil {
-			c.CloseAll()
-			return nil, fmt.Errorf("factory is not able to fill the pool: %s", err)
+	if poolConfig.IsInit {
+		for i := 0; i < poolConfig.MaxOpenConns; i++ {
+			conn, err := c.new()
+			if err != nil {
+				c.CloseAll()
+				return nil, fmt.Errorf("factory is not able to fill the pool: %s", err)
+			}
+			c.conns <- &Conn{conn: conn, t: time.Now()}
 		}
-		c.conns <- &Conn{conn: conn, t: time.Now()}
 	}
-
 	return c, nil
 }
 
